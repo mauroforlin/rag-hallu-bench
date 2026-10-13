@@ -1,0 +1,34 @@
+[project]
+name = "hallubench"
+version = "0.1.0"
+description = "Medical RAG hallucination detectors, graded on the same rows: Jev against open-weight verifiers and LLM judges."
+requires-python = ">=3.10"
+dependencies = [
+    "datasets>=2.19",
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "scipy",
+    "httpx",
+    "python-dotenv",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+# Jev, through TypeSafe's own index: pip install -e ".[jev]" --extra-index-url https://pypi.typesafe.ai/simple/
+jev = ["typesafe-sdk"]
+# Open-weight detectors. CPU works for the small ones; the 7-8B ones want a GPU (see notebooks/colab_gpu.ipynb).
+local = ["torch", "transformers>=4.45", "accelerate", "sentencepiece", "protobuf", "nltk", "lettucedetect", "laya==0.4.4"]
+# The cloud grounding checks (AWS Bedrock, Google Vertex AI Search)
+cloud = ["boto3", "google-auth", "requests"]
+gpu = ["torch", "transformers>=4.45", "accelerate", "sentencepiece", "protobuf", "nltk", "lettucedetect", "laya==0.4.4", "bitsandbytes"]
+
+[project.scripts]
+hallubench = "hallubench.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["hallubench*"]

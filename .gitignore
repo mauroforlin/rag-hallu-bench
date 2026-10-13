@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/
+results/raw/*.jsonl
+results/report/
+!results/raw/.gitkeep
+.ipynb_checkpoints/
+results/logs/
+*.egg-info/
+results/rerun*/
+results/latency/
+gcp-key.json
+results/release/

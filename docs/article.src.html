@@ -1,0 +1,448 @@
+<title>Catching Unsupported Medical Answers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: one reading column on a cool clinical neutral; figures share the text's width
+   and sit on their own chart surface, like plates in a lab report. Light only, by choice. */
+:root {
+  --bg: #f4f6f6;
+  --paper: #fcfcfb;
+  --ink: #12181b;
+  --ink-2: #4b565d;
+  --muted: #7d878d;
+  --rule: #dde2e4;
+  --axis: #c3c8ca;
+  --accent: #0d5f6e;
+  --accent-wash: #e2eef0;
+  --s-cal: #2a78d6;
+  --s-comp: #eb6834;
+  --s-writ: #1baf7a;
+  --s-svc: #8b5cc4;
+  --s-base: #a7b0b5;
+  --ring: #fcfcfb;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --measure: 720px;
+  --wide: 720px;
+  color-scheme: light;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.62; }
+.page { padding-inline: 20px; padding-block: 48px 96px; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 0; }
+.page > * { min-width: 0; }
+.col { width: 100%; max-width: var(--measure); }
+.wide { width: 100%; max-width: var(--wide); }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.12; margin: 0; }
+h1 { font-size: clamp(2.1rem, 5.2vw, 3.3rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.7rem; font-weight: 600; margin-top: 2.6em; margin-bottom: 0.5em; }
+h3 { font-size: 1.22rem; font-weight: 600; margin-top: 1.8em; margin-bottom: 0.3em; }
+p { margin: 0 0 1em; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+.standfirst { font-size: 1.2rem; line-height: 1.5; color: var(--ink-2); margin-top: 18px; }
+.byline { font-family: var(--font-data); font-size: 0.82rem; color: var(--muted); margin-top: 20px; }
+.num { font-family: var(--font-data); font-size: 0.92em; font-variant-numeric: tabular-nums; }
+.findings { margin: 36px 0 0; padding: 22px 24px; background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; }
+.findings h2 { margin: 0 0 12px; font-size: 1.15rem; letter-spacing: 0.02em; }
+.findings p { margin: 0; }
+ul.plain { padding-left: 1.2em; margin: 0 0 1em; display: grid; gap: 6px; }
+figure { margin: 34px 0 30px; padding: 22px 22px 16px; background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; }
+figcaption .fig-title { font-family: var(--font-display); font-weight: 600; font-size: 1.12rem; display: block; }
+figcaption .fig-sub { font-size: 0.9rem; color: var(--ink-2); display: block; margin-top: 4px; max-width: 75ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 14px 0 6px; font-size: 0.85rem; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.sw.ring { background: transparent !important; border: 2px solid var(--muted); width: 10px; height: 10px; }
+.sw.sq { border-radius: 2px; }
+.chart { position: relative; width: 100%; overflow-x: auto; }
+.chart svg { display: block; width: 100%; height: auto; min-width: 520px; }
+.chart text { font-family: var(--font-body); }
+.tick { font-family: var(--font-data) !important; font-size: 11px; fill: var(--muted); }
+.rowlab { font-size: 12.5px; fill: var(--ink); }
+.rowlab.ref { fill: var(--muted); font-style: italic; }
+.vallab { font-family: var(--font-data) !important; font-size: 11.5px; fill: var(--ink-2); }
+.grid { stroke: var(--rule); stroke-width: 1; }
+.base { stroke: var(--axis); stroke-width: 1; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--paper); font-size: 0.8rem; line-height: 1.45; padding: 8px 10px; border-radius: 4px; max-width: 260px; opacity: 0; transition: opacity 0.12s; z-index: 2; }
+.tip b { font-weight: 600; }
+.tip .mono { font-family: var(--font-data); }
+.controls { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 5px; overflow: hidden; margin: 12px 0 2px; }
+.seg button { font: inherit; font-size: 0.85rem; padding: 6px 12px; border: 0; background: transparent; color: var(--ink-2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent-wash); color: var(--ink); font-weight: 600; }
+details { margin-top: 12px; font-size: 0.88rem; }
+summary { cursor: pointer; color: var(--accent); }
+.tbl { overflow-x: auto; margin: 10px 0 1.2em; }
+table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+th, td { text-align: left; vertical-align: top; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--rule); }
+td.n, th.n { white-space: nowrap; }
+td.n, th.n { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+th { font-weight: 600; color: var(--ink-2); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin: 18px 0 8px; }
+.card { background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; min-width: 0; }
+.card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+.card p { font-size: 0.93rem; margin: 0; color: var(--ink-2); }
+.foot { margin-top: 3em; padding-top: 1.2em; border-top: 1px solid var(--rule); font-size: 0.88rem; color: var(--ink-2); }
+@media (max-width: 520px) { body { font-size: 16px; } figure { padding: 16px 14px 12px; } }
+@media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
+</style>
+
+<main class="page">
+<header class="col">
+  <h1>Testing hallucination checks on medical RAG answers</h1>
+  <p class="standfirst">How well do small classifiers, LLM judges and the grounding checks sold by AWS and Google spot unsupported claims in medical answers, and can their scores be trusted without a human in the loop?</p>
+  <div class="byline">Mauro Forlin · code, data and notebook on <a href="https://github.com/mauroforlin/rag-hallu-bench">GitHub</a></div>
+
+  <section class="findings" aria-labelledby="tldr">
+    <h2 id="tldr">In short</h2>
+    <p>Jev and Qwen3-235B, read through its token probabilities, came out on top, close enough to call it a tie, with Qwen slightly ahead on average and the two level on the real RAG answers, while Jev was about three times faster and four times cheaper. Asked to write its confidence like the other judges, the same Qwen fell to the level of GPT-6 Luna, so most of its advantage over them came from how its number was read. Claude Haiku 5.5 with reasoning came close behind, at about twenty times Jev's wait, and the grounding checks that AWS and Google sell for this job ended up at the level of the small open classifiers. On the real answers Jev seemed far more reliable when it cleared an answer than when it flagged one, and Qwen's low scores held up much less well, which is part of why my own tool now keeps a flagged claim and marks it as weak. Almost every system also looked better on synthetic datasets than on real answers.</p>
+  </section>
+</header>
+
+<section class="col">
+  <h2>Why I did this</h2>
+  <p>I work on a RAG tool that answers medical questions from the literature and cites a source for every claim. Its weak spot so far has been verification, because it checks that a cited paper exists but not whether the paper actually supports the claim, and closing that gap means adding a verifier, a model that reads the answer next to its sources and says whether something in it isn't supported.</p>
+  <p>The usual options are small classifiers trained for this job, like <a href="https://huggingface.co/vectara/hallucination_evaluation_model">HHEM</a> or <a href="https://github.com/Liyan06/MiniCheck">MiniCheck</a>, a large LLM asked to act as a judge, or the ready-made grounding check of the cloud the system already runs on. I also wanted to try <a href="https://typesafe.ai">Jev</a>, which TypeSafe released in September 2026 and which answers with a label and a probability, so that its output can go straight into code. Before choosing I wanted to get a sense of how these approaches compare on medical answers, and of whether their probabilities are good enough to act on without someone looking, and since I couldn't find a comparison on this kind of data I put one together. Some of what came out will probably sound familiar to people who work on evaluation, but seeing it on medical answers still changed how my tool handles the claims it flags.</p>
+
+  <h2>What counts as a hallucination</h2>
+  <p>Here an answer counts as hallucinated when it says something the retrieved documents don't say, even if it happens to be true. Whether the documents themselves are right is a different question, and this test leaves it aside.</p>
+
+  <h2>Data</h2>
+  <p>I used three public datasets, 5,246 answers in total.</p>
+  <div class="tbl">
+  <table>
+    <thead><tr><th>Dataset</th><th class="n">Answers</th><th>Answers written by</th><th>Labels from</th><th>Weak spot</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://huggingface.co/datasets/galileo-ai/ragbench">RAGBench</a> (PubMedQA, CovidQA)</td><td class="n">1,246</td><td>GPT-3.5 and Claude 3 Haiku, from retrieved passages</td><td>GPT-4, per sentence</td><td>labels from a model</td></tr>
+      <tr><td><a href="https://huggingface.co/datasets/PatronusAI/HaluBench">HaluBench</a> (PubMedQA, CovidQA)</td><td class="n">2,000</td><td>original answers plus rewritten wrong ones</td><td>the original QA datasets</td><td>easy</td></tr>
+      <tr><td><a href="https://huggingface.co/datasets/UTAustin-AIHealth/MedHallu">MedHallu</a></td><td class="n">2,000</td><td>one correct and one generated wrong answer per question</td><td>generation pipeline</td><td>correct answers can go beyond their passages</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>RAGBench is the closest to what a real RAG system produces, so it's the one I give most weight to. In each dataset 30% of the questions went into choosing thresholds and the other 70% into measuring, with every answer to the same question kept on the same side, and the dataset versions are pinned, so anyone rerunning the code should get the same rows.</p>
+
+  <h2>What I tested</h2>
+  <p>Every system returns a probability that the answer is hallucinated, or a score that can be read as one, but they arrive at that number in different ways, and the charts are coloured by how. The groups follow what each model was made for according to its makers, which doesn't necessarily say how well calibrated it turned out to be here.</p>
+</section>
+
+<section class="wide">
+  <div class="cards">
+    <div class="card"><h3><span class="sw" style="background:var(--s-cal)"></span>&nbsp; Computed, built for scoring</h3><p>Jev (asked three ways), <a href="https://huggingface.co/convaiinnovations/laya">Laya</a>, and <a href="https://huggingface.co/lighteternal/biodecision-v2-4b">BioDecision v2</a>, an open model trained on biomedical decisions.</p></div>
+    <div class="card"><h3><span class="sw" style="background:var(--s-comp)"></span>&nbsp; Computed, not trained for it</h3><p><a href="https://huggingface.co/Qwen/Qwen3-235B-A22B-Instruct-2507">Qwen3-235B</a> answering yes or no, <a href="https://huggingface.co/ibm-granite/granite-guardian-3.3-8b">Granite Guardian</a>, <a href="https://huggingface.co/PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct-v1.1">Lynx</a>, <a href="https://huggingface.co/bespokelabs/Bespoke-MiniCheck-7B">Bespoke-MiniCheck</a>, MiniCheck, <a href="https://github.com/yuh-zha/AlignScore">AlignScore</a>, <a href="https://github.com/KRLabsOrg/LettuceDetect">LettuceDetect</a>, HHEM.</p></div>
+    <div class="card"><h3><span class="sw" style="background:var(--s-writ)"></span>&nbsp; Written by the model</h3><p>GPT-6 Luna, GPT-5.6 Luna, Gemini 2.5 Flash and Qwen3-235B again, which write a verdict and a confidence, and Claude Haiku 5.5 and Gemini 3.8 Flash doing the same with reasoning on. Also <a href="https://github.com/explodinggradients/ragas">RAGAS</a> and <a href="https://github.com/truera/trulens">TruLens</a>, as scored by the RAGBench authors in 2024 (see Limits).</p></div>
+    <div class="card"><h3><span class="sw" style="background:var(--s-svc)"></span>&nbsp; Cloud grounding checks</h3><p>The <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-contextual-grounding-check.html">contextual grounding check</a> of AWS Bedrock Guardrails and Google's <a href="https://docs.cloud.google.com/generative-ai-app-builder/docs/check-grounding">Check Grounding API</a>, which return a grounding score.</p></div>
+    <div class="card"><h3><span class="sw" style="background:var(--s-base)"></span>&nbsp; Trivial references</h3><p>The answer's length, and the share of its words that never appear in the documents. They read no meaning, so any checker worth using should beat them clearly.</p></div>
+  </div>
+</section>
+
+<section class="col">
+  <p>Qwen is there mostly as a reference. Since Jev's number is computed from the model rather than written out by it, I wanted a large general-purpose model whose number comes out the same way, to get an idea of how much of Jev's result depends on Jev itself. I also ran it a second time asking for a written verdict and confidence like the other judges, on the same provider and with the same question, so that for this one model the way the number is read is the only thing that changes. All the judges got the same question with the same definitions, and the two with reasoning on are there because the obvious objection to LLM judges is that they do better when allowed to think first. Gemini 3.8 Flash costs about thirty times as much as Jev per answer, so I ran it on RAGBench only.</p>
+  <p>The two cloud checks are used the way their documentation describes, with default settings. AWS gets the documents, the question and the answer, while Google's API has no place for the question and gets only the documents and the answer, with longer documents cut into pieces of up to 10,000 characters as it requires. When Google finds nothing in an answer worth checking, a bare "True" for example, it returns no score and flags nothing, so I counted those answers as not flagged, which is what would happen to them in production.</p>
+
+  <h2>How I measured</h2>
+  <p>The main measure is AUROC, which describes how well a system ranks hallucinated answers above correct ones, from 0.5 for chance to 1 for a perfect ranking, and I report it as the average over the five datasets. A surface feature can point either way, since MedHallu's wrong answers are shorter than its correct ones while RAGBench's are longer, so the two trivial references take their direction from the threshold questions, dataset by dataset, the same way every checker takes its threshold from them.</p>
+  <p>I also looked at how often a "90% or more" turns out to be right. The datasets are about 45% hallucinated, which is far more than a working system should produce, so I recalculated this for rates of 5, 10 and 20%.</p>
+  <p>Each system is compared with Jev on the same answers, with intervals from 20,000 resamples and a Holm correction because there are 106 comparisons in all. For Jev and Qwen I also repeated the whole run and reworded their question, once for each of Jev's two forms and twice for Qwen, and I measured speed one request at a time and cost in dollars per 1,000 answers.</p>
+
+  <h2>Results</h2>
+  <h3>Ranking</h3>
+</section>
+
+<figure class="wide" id="fig-auroc">
+  <figcaption><span class="fig-title">AUROC, average of five datasets</span><span class="fig-sub">Higher is better, 0.5 is random. Gemini 3.8 Flash, RAGAS and TruLens only cover RAGBench, so they are in the next chart.</span></figcaption>
+  <div class="legend" aria-hidden="true"><span><i class="sw" style="background:var(--s-cal)"></i>computed, built for scoring</span><span><i class="sw" style="background:var(--s-comp)"></i>computed</span><span><i class="sw" style="background:var(--s-writ)"></i>written</span><span><i class="sw" style="background:var(--s-svc)"></i>cloud check</span><span><i class="sw" style="background:var(--s-base)"></i>trivial reference</span></div>
+  <div class="chart" data-chart="auroc"></div>
+  <details><summary>Show as table</summary><div class="tbl" data-table="auroc"></div></details>
+</figure>
+
+<section class="col">
+  <p>Qwen came first at <span class="num">0.925</span>, followed by Jev Choice at <span class="num">0.917</span>, Jev Noul at <span class="num">0.916</span> and Claude Haiku 5.5 at <span class="num">0.905</span>. The gap between Jev and Qwen is significant only on MedHallu, where Qwen is <span class="num">0.02</span> ahead, and my guess is that part of it comes from the dataset, since MedHallu's correct answers often say more than their passages do and Jev flags half of them against Qwen's 8%, with each of those flags counted as a mistake. I haven't verified this, though. On RAGBench alone the three end up within <span class="num">0.002</span> of each other.</p>
+  <p>The average gives each dataset the same weight, so RAGBench's CovidQA part, with only 26 hallucinated answers in the test part, counts as much as MedHallu's 1,462 answers. Weighting each dataset by its size, or leaving that part out, keeps Qwen, Jev Choice and Jev Noul first, second and third, at <span class="num">0.936</span>, <span class="num">0.929</span> and <span class="num">0.928</span> or at <span class="num">0.927</span>, <span class="num">0.926</span> and <span class="num">0.924</span>. Further down the order shifts by a place or three, and BioDecision rises to fourth with the weighted average, mostly because MedHallu, which it was trained on, is the largest dataset. Both averages are in the table under the chart.</p>
+  <p>Jev is significantly ahead of Gemini 2.5 Flash on 4 of the 5 datasets, of GPT-6 Luna on 3 and of most open models on 4 or 5. BioDecision is an exception, with Jev significantly ahead on 2 datasets but behind on MedHallu, which BioDecision was trained on, while GPT-5.6 Luna and Claude Haiku 5.5 stay close and are significantly behind only on MedHallu. Somewhat oddly, GPT-5.6 Luna also did better than the newer GPT-6 Luna on average, although GPT-6 Luna was ahead on RAGBench, and I didn't test the difference between the two.</p>
+  <p>Asked to write its confidence, Qwen dropped from <span class="num">0.925</span> to <span class="num">0.874</span>, level with GPT-6 Luna at <span class="num">0.875</span>, and on RAGBench from <span class="num">0.847</span> to <span class="num">0.784</span>. It wrote 0.05 or 0.95 for 80% of the answers and used only 12 different values in all, so most answers end up tied and can't be ranked against each other, while its token probabilities spread them out. Jev is significantly ahead of this version on 3 of the 5 datasets. For this model, at least, most of its advantage over the other judges came from the way the number was read rather than from the model.</p>
+  <p>Switching reasoning on didn't change the picture much. Haiku became the best of the judges that write their answer, but it stayed behind Jev and Qwen on the overall average and on RAGBench, and Gemini 3.8 Flash, which I only ran on RAGBench, scored <span class="num">0.811</span> there against Jev's <span class="num">0.848</span>, significantly behind on the PubMedQA part. Haiku also declined to judge 9 of the 5,246 answers, most of them about viruses and infections, where its provider's content filter stopped the request, so its average covers 99.8% of the answers.</p>
+  <p>The cloud checks came out well below the LLM judges, Google's at <span class="num">0.746</span> and AWS's at <span class="num">0.727</span>, about where AlignScore (<span class="num">0.747</span>) and MiniCheck are, and Jev is significantly ahead of both on 4 and 5 datasets. AWS did well only on HaluBench's CovidQA part, at <span class="num">0.956</span>, where the wrong answers are visible rewrites of the passage. Google found nothing to check in 110 answers, 99 of them in that same CovidQA part, and 51 of the 110 were hallucinated. Counting those answers as not flagged puts them below every answer Google did score, and that choice costs it something, since leaving them out would raise its average to <span class="num">0.761</span> and scoring them at 0.5 to <span class="num">0.757</span>, just above AlignScore, while its result on the other four datasets barely moves. These services are general-purpose and the answers here are all medical, which is probably part of the gap, and both can change under the same name without notice.</p>
+  <p>Answer length alone reached <span class="num">0.568</span> and the share of words missing from the documents <span class="num">0.612</span>. Every checker with a full average beats both except Laya, at <span class="num">0.559</span>, which on these answers seems to pick up little beyond the surface, and on RAGBench RAGAS (<span class="num">0.558</span>) also falls below the share of missing words (<span class="num">0.634</span>).</p>
+
+  <h3>Real answers vs synthetic ones</h3>
+</section>
+
+<figure class="wide" id="fig-gap">
+  <figcaption><span class="fig-title">RAGBench (real RAG answers) vs HaluBench (rewritten wrong answers)</span><span class="fig-sub">Filled dot: average AUROC on RAGBench. Ring: average AUROC on HaluBench.</span></figcaption>
+  <div class="legend" aria-hidden="true"><span><i class="sw" style="background:var(--ink-2)"></i>RAGBench</span><span><i class="sw ring"></i>HaluBench</span></div>
+  <div class="chart" data-chart="gap"></div>
+  <details><summary>Show as table</summary><div class="tbl" data-table="gap"></div></details>
+</figure>
+
+<section class="col">
+  <p>Almost every system does better on HaluBench, where the wrong answers were written on purpose, than on RAGBench, and the two models trained on related data drop the most, Lynx from <span class="num">0.95</span> to <span class="num">0.64</span> and BioDecision from <span class="num">0.96</span>, and <span class="num">0.99</span> on MedHallu, to <span class="num">0.75</span> on RAGBench. LettuceDetect is the only one that did better on RAGBench, RAGAS (<span class="num">0.56</span>) stays close to chance there with TruLens (<span class="num">0.65</span>) not far above, and the AWS check drops from <span class="num">0.81</span> to <span class="num">0.66</span>.</p>
+  <p>The drop probably has more than one cause, because RAGBench differs from HaluBench both in its answers, which are real, and in its labels, which come from GPT-4 and are likely noisier. Even so, it suggests that a good score on a synthetic benchmark doesn't tell you much about how a checker will do on the answers your own system writes.</p>
+
+  <h3>Can you trust a high score?</h3>
+  <p>How often a system is right when it says an answer is at least 90% likely to be hallucinated depends a lot on how many hallucinated answers there are to begin with. The datasets have around 45%, and a working system should have far fewer, so I recalculated it for 5, 10 and 20%.</p>
+</section>
+
+<figure class="wide" id="fig-trust">
+  <figcaption><span class="fig-title">Precision of "90% or more" flags</span><span class="fig-sub">At the selected share of hallucinated answers, with 95% interval, on all five datasets or on the real RAG answers alone. Grey bars rest on fewer than 10 confident flags.</span></figcaption>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Share of hallucinated answers">
+      <button type="button" data-prev="0.05" aria-pressed="false">5%</button>
+      <button type="button" data-prev="0.1" aria-pressed="true">10%</button>
+      <button type="button" data-prev="0.2" aria-pressed="false">20%</button>
+    </div>
+    <div class="seg" role="group" aria-label="Answers">
+      <button type="button" data-scope="acting" aria-pressed="true">All datasets</button>
+      <button type="button" data-scope="acting_ragbench" aria-pressed="false">RAGBench only</button>
+    </div>
+  </div>
+  <div class="legend" aria-hidden="true"><span><i class="sw" style="background:var(--s-cal)"></i>computed, built for scoring</span><span><i class="sw" style="background:var(--s-comp)"></i>computed</span><span><i class="sw" style="background:var(--s-writ)"></i>written</span><span><i class="sw" style="background:var(--s-svc)"></i>cloud check</span></div>
+  <div class="chart" data-chart="trust"></div>
+  <details><summary>Show as table</summary><div class="tbl" data-table="trust"></div></details>
+</figure>
+
+<section class="col">
+  <p>At 10%, Qwen is right <span class="num">75%</span> of the time, Jev Noul <span class="num">66%</span>, Claude Haiku <span class="num">57%</span> and Jev Choice <span class="num">44%</span>, while the judges that write their confidence without reasoning do worse, with Gemini 2.5 at <span class="num">38%</span>, GPT-5.6 Luna at <span class="num">24%</span> and GPT-6 Luna at <span class="num">17%</span>, partly because GPT-6 Luna says "90% or more" on 72% of all answers. The two cloud checks are right <span class="num">21%</span> (Google) and <span class="num">25%</span> (AWS) of the time. BioDecision reaches 96%, but that figure includes datasets it was trained on. On RAGBench alone the numbers are lower and the margins wide, with only 863 answers there, at about <span class="num">51%</span> for Qwen and Haiku, <span class="num">40%</span> for Jev Choice and <span class="num">25%</span> for Gemini 3.8 Flash, while Jev Noul flags so rarely there that its <span class="num">70%</span> comes with an interval running from 47% to 100%.</p>
+  <p>Qwen shows the same thing here. Writing its confidence, it was right <span class="num">49%</span> of the time at 10%, against <span class="num">75%</span> when read through its token probabilities, and <span class="num">38%</span> against <span class="num">51%</span> on RAGBench alone. The other written judges are different models, so this doesn't show that computed numbers always beat written ones, only that for the one model I could read both ways they did.</p>
+  <p>Low scores turned out to be much more dependable, at least on the mixed data, where an answer scored at 10% or less by one of the top systems was fine 98.5–99.7% of the time. It's a bit like screening for a rare condition, where, if most answers are correct, even a small share of false alarms ends up being a large part of all alarms, so a high score is better treated as a reason to go and check than as a reason to delete.</p>
+  <p>On RAGBench alone this holds for Jev and Haiku but much less for Qwen, which gave 10% or less to 54% of the hallucinated answers there, against 3% for Jev Choice, 4% for Haiku and none for Jev Noul. With 10% of answers hallucinated, a low score from Qwen would be right about 94% of the time, which is only a little better than the 90% you'd get with no check at all.</p>
+
+  <h3>Robustness</h3>
+  <p>When I reworded the question, Jev moved by <span class="num">0.009</span> at most. Qwen didn't move with a simpler wording, but when I asked "does it contain anything unsupported?" in place of "is everything supported?" it dropped by <span class="num">0.114</span>, and the two versions agreed on only 60% of answers.</p>
+  <p>A second full run of both changed the average by <span class="num">0.003</span> at most and flipped about 1% of verdicts, and the same three systems stay on top when I leave out MedHallu or HaluBench, or keep only RAGBench.</p>
+
+  <h3>Time and cost</h3>
+</section>
+
+<figure class="wide" id="fig-latency">
+  <figcaption><span class="fig-title">Seconds per check</span><span class="fig-sub">One request at a time, median with a line to the 90th percentile. API checkers measured from Italy over the network, open models on a Colab A100 (square markers). The two cloud checks were timed only inside the main run, with several requests in flight (hollow bars), and Laya, LettuceDetect and BioDecision weren't timed one request at a time.</span></figcaption>
+  <div class="legend" aria-hidden="true"><span><i class="sw" style="background:var(--s-cal)"></i>computed, built for scoring</span><span><i class="sw" style="background:var(--s-comp)"></i>computed</span><span><i class="sw" style="background:var(--s-writ)"></i>written</span><span><i class="sw" style="background:var(--s-svc)"></i>cloud check</span></div>
+  <div class="chart" data-chart="latency"></div>
+  <details><summary>Show as table</summary><div class="tbl" data-table="latency"></div></details>
+</figure>
+
+<section class="col">
+  <p>Jev took <span class="num">0.24 s</span> per check and cost <span class="num">$0.07</span> per 1,000 answers, against <span class="num">0.73 s</span> and <span class="num">$0.28</span> for Qwen (<span class="num">0.93 s</span> and <span class="num">$0.32</span> when it writes its confidence), about <span class="num">1 s</span> for Gemini 2.5 Flash and about <span class="num">2.5 s</span> for the Luna models. Reasoning costs time, with Claude Haiku at <span class="num">4.7 s</span> and <span class="num">$0.32</span> and Gemini 3.8 Flash at <span class="num">4.3 s</span> and <span class="num">$2.07</span>. The cloud checks answered in about <span class="num">0.2</span> to <span class="num">0.35 s</span> even under load, with AWS charging <span class="num">$0.54</span> per 1,000 answers on these documents and Google well under a cent. That matters mostly if every answer is checked before the user sees it, since the time then adds to their wait.</p>
+
+  <h3>Single sentences</h3>
+  <p>Jev can also check each sentence on its own, and on RAGBench's sentence labels it scored <span class="num">0.746</span> on PubMedQA, ahead of Bespoke-MiniCheck (<span class="num">0.670</span>) and of MiniCheck and HHEM (around <span class="num">0.6</span>), while on CovidQA Bespoke-MiniCheck did better, with <span class="num">0.860</span> against <span class="num">0.817</span>. The comparison isn't entirely even, because Jev sees the question and the whole answer, while the others see only the sentence.</p>
+
+  <h2>Notes on the setup</h2>
+  <p>In RAGBench's PubMedQA part each question has two answers, one from GPT-3.5 and one from Claude 3 Haiku, under the same ID, so the generating model is part of each answer's ID, and the two answers to a question always share a side of the split. HaluBench has no question ID at all, and in its CovidQA part about half the answers share their question with another answer, usually the right answer and a rewritten one, so there the split follows the text of the question. The Qwen requests all go to a single provider, because the models' router otherwise spreads them across providers running different versions of the model.</p>
+  <p>On 26 answers Granite Guardian gave "yes" and "no" the same weight, to the precision the model runs at, so those sit at 0.5. I looked at its token probabilities for some of them and the tie is in the model's own output, not in how its answer is read.</p>
+  <p>I also tried <a href="https://github.com/chaitanyamalaviya/ExpertQA">ExpertQA</a>, where medical professionals rated whether each claim was supported by its source, but every system scored about 0.5 on it, much as every model does on the <a href="https://llm-aggrefact.github.io/">LLM-AggreFact</a> leaderboard. The stored sources are short fragments of web pages, so I looked at 16 claims the experts had marked as supported and Jev had not, and found the full 2023 page for 7 of them on the Internet Archive. With the full page Jev still judged all 7 unsupported, and in the one case I checked by hand the page indeed didn't say it. It's a small sample, and it leans partly on one of the systems being tested, but it suggests the experts were judging whether the claim was correct more than whether the source said it, so I left the dataset out.</p>
+  <p>On the hardware side, one verifier filled 16 GB of RAM on long documents, a 40 GB GPU ran out of memory on 9,000-token passages, and the Colab disk could only hold three 8B models at a time.</p>
+
+  <h2>Limits</h2>
+  <ul class="plain">
+    <li>RAGBench labels come from GPT-4 and not from people, which may favour judges that work like GPT-4, and none of the labels here come from people.</li>
+    <li>Lynx was trained on HaluBench's sources and BioDecision on MedHallu data, so their scores there are inflated, and I can't know whether the closed models saw these public datasets in training.</li>
+    <li>MedHallu's correct answers sometimes go beyond their passages, which tends to favour lenient judges, and its wrong answers are shorter than the correct ones, enough for answer length alone to reach an AUROC of 0.745 there.</li>
+    <li>Only Qwen was read both ways, so whether token probabilities would help GPT, Gemini or Claude as much is untested, and not all of their APIs return them.</li>
+    <li>On the core test slice (716 answers) Jev Choice and Jev Noul had calibration errors of 0.148 and 0.152, close to Claude Haiku (0.147) but higher than Qwen (0.097), Qwen writing its confidence (0.084) and Gemini 2.5 Flash (0.115), so for Jev being built for scoring didn't translate into the best-calibrated probabilities here. The lowest error of all was BioDecision's (0.048), partly on data it was trained on. With 716 answers these errors are noisy, so differences of a few hundredths shouldn't be read as a ranking.</li>
+    <li>I wrote one prompt per system, apart from the wording test on Jev and Qwen, and Laya and BioDecision got Jev's wording.</li>
+    <li>The largest judges, such as Claude Opus or the top GPT models with reasoning on, aren't here, and neither are Azure's groundedness detection, Cleanlab's TLM or claim-level checkers like RefChecker.</li>
+    <li>The cloud checks and the API models can change under the same name, so a rerun may not reproduce their numbers exactly, which is one reason every score is published.</li>
+    <li>The datasets overlap in places, with 200 questions in both HaluBench-PubMedQA and MedHallu and 76 in both CovidQA sets.</li>
+    <li>RAGBench-CovidQA has only 26 hallucinated answers in the test part but counts for a fifth of the average. The top three keep their order with the other two averages, but its own AUROC moves a lot from one answer to the next.</li>
+    <li>Everything is in English, and RAGBench's answers were written in 2024 by GPT-3.5 and Claude 3 Haiku, so the test shows how today's checkers catch the mistakes of those models, which are probably cruder than the ones current models make.</li>
+    <li>RAGAS and TruLens are the scores the RAGBench authors computed in 2024 with the judge models they used then, not runs of mine, so their low results describe that setup and not how either tool would do today with a current judge. They are the least even comparison here.</li>
+    <li>Being supported by the sources doesn't mean being medically correct.</li>
+  </ul>
+
+  <h2>What I changed in my tool</h2>
+  <p>The tool I mentioned at the start is <a href="https://github.com/mauroforlin/ebm-lens">EBM Lens</a>, an open-source project that searches the biomedical literature and writes answers in which every claim cites a source, and it can now use Jev to check each claim against the sources it cites. When one of those sources contradicts the claim, or none of them seems to address it, the claim stays in the answer with its citations, marked as weak and flagged for the reader to check. Deleting claims of the second kind would have looked reasonable before these numbers, but a confident flag seems to be wrong often enough that deleting would throw away good claims along with the bad ones.</p>
+  <p>If you're adding a similar check to your own system, the thing I'd take from this is to set thresholds on answers your system actually produced and to treat a high score as a request for a second look. A low score from Jev looked like a fairly safe green light on these data, but that didn't hold for every checker, so it's something to verify on your own answers, and if a general LLM is the judge it also helps to read its token probabilities rather than a confidence it writes, where the API returns them, to pin the provider and to try more than one wording of the question, since all three changed my results.</p>
+
+  <h2>Rerun it</h2>
+  <p>The code, the notebook and every score are on <a href="https://github.com/mauroforlin/rag-hallu-bench">GitHub</a>. The datasets are downloaded from their original sources at the pinned versions, the scores of every checker on every answer are attached to the release, and one command rebuilds all the numbers on this page from them without calling any model. Rerunning the checkers themselves needs a GPU for the open models and keys for the APIs, and the whole study cost about $20 in API and cloud calls, false starts included.</p>
+
+  <div class="foot">Datasets: RAGBench (Friel et al. 2024), HaluBench (Ravi et al. 2024), MedHallu (Pandit et al. 2025), ExpertQA (Malaviya et al. 2024).</div>
+</section>
+</main>
+
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script id="bench-data" type="application/json">/*DATA*/</script>
+<script>
+(function () {
+  const DATA = JSON.parse(document.getElementById('bench-data').textContent);
+  const FAM = { calibrated: 'var(--s-cal)', computed: 'var(--s-comp)', written: 'var(--s-writ)', service: 'var(--s-svc)', baseline: 'var(--s-base)' };
+  const FAMNAME = { calibrated: 'computed, built for scoring', computed: 'computed', written: 'written', service: 'cloud grounding check', baseline: 'trivial reference' };
+  const DSNAME = { 'ragbench-pubmedqa': 'RAGBench PubMedQA', 'ragbench-covidqa': 'RAGBench CovidQA', 'halubench-pubmedqa': 'HaluBench PubMedQA', 'halubench-covidqa': 'HaluBench CovidQA', 'medhallu': 'MedHallu' };
+  const DS = Object.keys(DSNAME);
+  const byId = Object.fromEntries(DATA.detectors.map(d => [d.id, d]));
+  const NS = 'http://www.w3.org/2000/svg';
+  const tip = document.getElementById('tip');
+  const f3 = v => v == null ? '–' : v.toFixed(3);
+  const pct = v => v == null ? '–' : Math.round(v * 100) + '%';
+  const TRAINED_ON = { 'biodecision-v2-4b': 1, 'lynx-8b': 1 };
+
+  function el(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function text(parent, x, y, s, cls, anchor) {
+    const t = el('text', { x, y, class: cls, 'text-anchor': anchor || 'start', 'dominant-baseline': 'middle' }, parent);
+    t.textContent = s;
+    return t;
+  }
+  function hideTip() { tip.style.opacity = '0'; }
+  tip.style.position = 'absolute';
+  document.body.appendChild(tip);
+  function placeTip(evt) {
+    const x = evt.pageX + 14, y = evt.pageY + 14;
+    const maxX = window.scrollX + document.documentElement.clientWidth - tip.offsetWidth - 12;
+    tip.style.left = Math.min(x, maxX) + 'px';
+    tip.style.top = y + 'px';
+  }
+  function bindTip(node, html) {
+    node.style.cursor = 'default';
+    node.addEventListener('pointermove', e => { tip.innerHTML = html(); tip.style.opacity = '1'; placeTip(e); });
+    node.addEventListener('pointerleave', hideTip);
+    node.setAttribute('tabindex', '0');
+    node.addEventListener('focus', () => { tip.innerHTML = html(); tip.style.opacity = '1'; const r = node.getBoundingClientRect(); tip.style.left = (r.right + window.scrollX + 8) + 'px'; tip.style.top = (r.top + window.scrollY) + 'px'; });
+    node.addEventListener('blur', hideTip);
+  }
+  function rowLabel(F, y, d) {
+    text(F.svg, F.labelW - 12, y, d.name, d.family === 'baseline' ? 'rowlab ref' : 'rowlab', 'end');
+  }
+
+  // A horizontal row chart: one row per item, a linear x scale, gridlines at ticks.
+  function frame(host, rows, xmin, xmax, ticks, fmt) {
+    host.innerHTML = '';
+    const W = 680, rowH = 26, top = 8, labelW = 200, right = 100, bottom = 30;
+    const H = top + rows * rowH + bottom;
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' }, host);
+    const x = v => labelW + (Math.min(Math.max(v, xmin), xmax) - xmin) / (xmax - xmin) * (W - labelW - right);
+    for (const t of ticks) {
+      el('line', { x1: x(t), x2: x(t), y1: top, y2: top + rows * rowH, class: 'grid' }, svg);
+      text(svg, x(t), top + rows * rowH + 16, fmt(t), 'tick', 'middle');
+    }
+    el('line', { x1: x(xmin), x2: x(xmin), y1: top, y2: top + rows * rowH, class: 'base' }, svg);
+    return { svg, x, y: i => top + i * rowH + rowH / 2, labelW, W, rowH };
+  }
+  function table(host, head, body) {
+    host.innerHTML = '<table><thead><tr>' + head.map((h, i) => `<th${i ? ' class="n"' : ''}>${h}</th>`).join('') +
+      '</tr></thead><tbody>' + body.map(r => '<tr>' + r.map((c, i) => `<td${i ? ' class="n"' : ''}>${c}</td>`).join('') + '</tr>').join('') + '</tbody></table>';
+  }
+  function bar(svg, F, y, value, fill, hollow) {
+    const barH = 14, w = Math.max(0, F.x(value) - F.x(0));
+    el('path', { d: `M${F.x(0)},${y - barH / 2} h${Math.max(0, w - 4)} a4,4 0 0 1 4,4 v${barH - 8} a4,4 0 0 1 -4,4 h${-Math.max(0, w - 4)} z`,
+      fill: hollow ? 'var(--paper)' : fill, stroke: hollow ? fill : 'none', 'stroke-width': hollow ? 1.5 : 0 }, svg);
+  }
+  function whisker(svg, F, y, a, b) {
+    el('line', { x1: F.x(a), x2: F.x(b), y1: y, y2: y, stroke: 'var(--ink)', 'stroke-width': 1.5 }, svg);
+    el('line', { x1: F.x(a), x2: F.x(a), y1: y - 4, y2: y + 4, stroke: 'var(--ink)', 'stroke-width': 1.5 }, svg);
+    el('line', { x1: F.x(b), x2: F.x(b), y1: y - 4, y2: y + 4, stroke: 'var(--ink)', 'stroke-width': 1.5 }, svg);
+  }
+
+  // Figure 1: macro AUROC dot plot
+  (function () {
+    const host = document.querySelector('[data-chart="auroc"]');
+    const rows = DATA.detectors.filter(d => d.macro != null).sort((a, b) => b.macro - a.macro);
+    const F = frame(host, rows.length, 0.5, 1.0, [0.5, 0.6, 0.7, 0.8, 0.9, 1.0], v => v.toFixed(1));
+    F.svg.setAttribute('aria-label', 'Macro AUROC by checker, from ' + rows[0].name + ' at ' + f3(rows[0].macro) + ' to ' + rows[rows.length - 1].name + ' at ' + f3(rows[rows.length - 1].macro));
+    rows.forEach((d, i) => {
+      const y = F.y(i);
+      rowLabel(F, y, d);
+      el('line', { x1: F.x(0.5), x2: F.x(d.macro), y1: y, y2: y, stroke: 'var(--rule)', 'stroke-width': 2 }, F.svg);
+      const g = el('g', {}, F.svg);
+      el('circle', { cx: F.x(d.macro), cy: y, r: 11, fill: 'transparent' }, g);
+      el('circle', { cx: F.x(d.macro), cy: y, r: 5.5, fill: FAM[d.family], stroke: 'var(--ring)', 'stroke-width': 2 }, g);
+      text(F.svg, F.x(d.macro) + 12, y, f3(d.macro), 'vallab');
+      bindTip(g, () => `<b>${d.name}</b> · ${FAMNAME[d.family]}<br>` + DS.filter(k => d.per_ds[k]).map(k => `${DSNAME[k]} <span class="mono">${f3(d.per_ds[k].auroc)}</span>`).join('<br>') +
+        (d.coverage < 1 ? `<br>scored <span class="mono">${(d.coverage * 100).toFixed(1)}%</span> of answers` : ''));
+    });
+    table(document.querySelector('[data-table="auroc"]'), ['Checker', 'Average', 'RB PubMed', 'RB Covid', 'HB PubMed', 'HB Covid', 'MedHallu', 'Weighted by size', 'Without RB Covid'],
+      rows.map(d => [d.name, f3(d.macro), ...DS.map(k => f3(d.per_ds[k] && d.per_ds[k].auroc)), f3(d.weighted), f3(d.macro_without_rb_covidqa)]));
+  })();
+
+  // Figure 2: real vs synthetic dumbbell
+  (function () {
+    const host = document.querySelector('[data-chart="gap"]');
+    const rows = DATA.detectors.filter(d => d.family !== 'baseline').sort((a, b) => b.ragbench - a.ragbench);
+    const F = frame(host, rows.length, 0.5, 1.0, [0.5, 0.6, 0.7, 0.8, 0.9, 1.0], v => v.toFixed(1));
+    F.svg.setAttribute('aria-label', 'AUROC on RAGBench against HaluBench for each checker');
+    rows.forEach((d, i) => {
+      const y = F.y(i);
+      rowLabel(F, y, d);
+      const g = el('g', {}, F.svg);
+      if (d.halubench != null) {
+        el('line', { x1: F.x(d.ragbench), x2: F.x(d.halubench), y1: y, y2: y, stroke: 'var(--axis)', 'stroke-width': 2 }, g);
+        el('circle', { cx: F.x(d.halubench), cy: y, r: 5, fill: 'var(--paper)', stroke: 'var(--muted)', 'stroke-width': 2 }, g);
+      }
+      el('circle', { cx: F.x(d.ragbench), cy: y, r: 11, fill: 'transparent' }, g);
+      el('circle', { cx: F.x(d.ragbench), cy: y, r: 5.5, fill: FAM[d.family], stroke: 'var(--ring)', 'stroke-width': 2 }, g);
+      const right = Math.max(d.ragbench, d.halubench || 0);
+      text(F.svg, F.x(right) + 12, y, d.halubench != null ? `${f3(d.ragbench)} → ${f3(d.halubench)}` : f3(d.ragbench), 'vallab');
+      bindTip(g, () => `<b>${d.name}</b><br>RAGBench (real) <span class="mono">${f3(d.ragbench)}</span><br>HaluBench (synthetic) <span class="mono">${f3(d.halubench)}</span>`);
+    });
+    table(document.querySelector('[data-table="gap"]'), ['Checker', 'RAGBench', 'HaluBench', 'Gap'],
+      rows.map(d => [d.name, f3(d.ragbench), f3(d.halubench), d.halubench != null ? (d.halubench - d.ragbench >= 0 ? '+' : '') + (d.halubench - d.ragbench).toFixed(3) : '–']));
+  })();
+
+  // Figure 3: precision of the confident flag at a chosen prevalence, pooled or RAGBench only
+  let prev = '0.1', scope = 'acting';
+  const THIN = 10;  // fewer confident flags than this and a share rests on too few answers to read
+  function drawTrust() {
+    const host = document.querySelector('[data-chart="trust"]');
+    const rows = DATA.detectors.filter(d => d[scope] && d[scope].flag_precision)
+      .sort((a, b) => (b[scope].flag_precision[prev].value || 0) - (a[scope].flag_precision[prev].value || 0));
+    const F = frame(host, rows.length, 0, 1, [0, 0.25, 0.5, 0.75, 1], v => Math.round(v * 100) + '%');
+    F.svg.setAttribute('aria-label', 'Precision of the 90% flag at a ' + Math.round(prev * 100) + '% hallucination rate, ' + (scope === 'acting' ? 'all datasets' : 'RAGBench only'));
+    rows.forEach((d, i) => {
+      const y = F.y(i), a = d[scope], p = a.flag_precision[prev];
+      const flags = Math.round(a.flag_share * a.n), thin = flags < THIN;
+      rowLabel(F, y, d);
+      const g = el('g', {}, F.svg);
+      el('rect', { x: F.x(0), y: y - F.rowH / 2, width: F.W - F.labelW, height: F.rowH, fill: 'transparent' }, g);
+      if (p.value != null) bar(g, F, y, p.value, thin ? 'var(--axis)' : FAM[d.family]);
+      if (p.ci && p.ci[0] != null) whisker(g, F, y, p.ci[0], p.ci[1]);
+      text(F.svg, F.x(Math.max(p.value || 0, p.ci && p.ci[1] || 0)) + 10, y, pct(p.value) + (thin ? ' · ' + flags + (flags === 1 ? ' flag' : ' flags') : ''), 'vallab');
+      bindTip(g, () => `<b>${d.name}</b><br>right <span class="mono">${pct(p.value)}</span> of the time (95% CI ${pct(p.ci[0])}–${pct(p.ci[1])})<br>flags ≥ 90% on <span class="mono">${pct(a.flag_share)}</span> of test answers<br>catches <span class="mono">${pct(a.flag_tpr)}</span> of hallucinations, wrongly flags <span class="mono">${pct(a.flag_fpr)}</span> of faithful answers` +
+        (scope === 'acting' && TRAINED_ON[d.id] ? '<br><i>includes datasets it was trained on</i>' : ''));
+    });
+    table(document.querySelector('[data-table="trust"]'), ['Checker', 'Rate 5%', 'Rate 10%', 'Rate 20%', 'Answers flagged ≥ 90%', 'Hallucinations scored ≤ 10%', 'Clean when ≤ 10% (rate 10%)'],
+      rows.map(d => { const a = d[scope]; return [d.name, pct(a.flag_precision['0.05'].value), pct(a.flag_precision['0.1'].value), pct(a.flag_precision['0.2'].value), Math.round(a.flag_share * a.n) + ' (' + pct(a.flag_share) + ')', pct(a.clear_miss_rate), a.clear_npv['0.1'].value == null ? '–' : (a.clear_npv['0.1'].value * 100).toFixed(1) + '%']; }));
+  }
+  document.querySelectorAll('[data-prev]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-prev]').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+    prev = b.dataset.prev; drawTrust();
+  }));
+  document.querySelectorAll('[data-scope]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-scope]').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+    scope = b.dataset.scope; drawTrust();
+  }));
+  drawTrust();
+
+  // Figure 4: latency, median with p90 whisker
+  (function () {
+    const host = document.querySelector('[data-chart="latency"]');
+    const rows = DATA.latency.filter(l => byId[l.id]).map(l => ({ ...l, d: byId[l.id] })).sort((a, b) => a.median - b.median);
+    const xmax = 8;
+    const F = frame(host, rows.length, 0, xmax, [0, 2, 4, 6, 8], v => v + ' s');
+    F.svg.setAttribute('aria-label', 'Median seconds per check by checker');
+    rows.forEach((r, i) => {
+      const y = F.y(i), med = r.median / 1000, p90 = r.p90 / 1000;
+      rowLabel(F, y, r.d);
+      const g = el('g', {}, F.svg);
+      el('rect', { x: F.x(0), y: y - F.rowH / 2, width: F.W - F.labelW, height: F.rowH, fill: 'transparent' }, g);
+      bar(g, F, y, med, FAM[r.d.family], r.where === 'api-parallel');
+      el('line', { x1: F.x(med), x2: F.x(p90), y1: y, y2: y, stroke: 'var(--ink)', 'stroke-width': 1.5 }, g);
+      el('line', { x1: F.x(p90), x2: F.x(p90), y1: y - 4, y2: y + 4, stroke: 'var(--ink)', 'stroke-width': 1.5 }, g);
+      if (r.where === 'gpu') el('rect', { x: F.x(med) - 4, y: y - 4, width: 8, height: 8, fill: 'var(--ink)' }, g);
+      text(F.svg, F.x(p90) + 10, y, med.toFixed(2) + ' s', 'vallab');
+      const where = { api: 'over the network, one request at a time', gpu: 'on a Colab A100, one request at a time', 'api-parallel': 'over the network, inside the main run' }[r.where];
+      bindTip(g, () => `<b>${r.d.name}</b><br>median <span class="mono">${med.toFixed(2)} s</span>, 90th percentile <span class="mono">${p90.toFixed(2)} s</span><br>${where}` +
+        (r.d.cost_per_1k != null ? `<br>cost <span class="mono">$${r.d.cost_per_1k < 0.01 ? '<0.01' : r.d.cost_per_1k.toFixed(2)}</span> per 1,000 answers` : ''));
+    });
+    table(document.querySelector('[data-table="latency"]'), ['Checker', 'Median (s)', '90th pct (s)', 'Measured', '$ per 1,000 answers', 'RAGBench AUROC'],
+      rows.map(r => [r.d.name, (r.median / 1000).toFixed(2), (r.p90 / 1000).toFixed(2), { api: 'API', gpu: 'A100', 'api-parallel': 'API, in main run' }[r.where],
+        r.d.cost_per_1k == null ? '–' : (r.d.cost_per_1k < 0.01 ? '<0.01' : r.d.cost_per_1k.toFixed(2)), f3(r.d.ragbench)]));
+  })();
+})();
+</script>
