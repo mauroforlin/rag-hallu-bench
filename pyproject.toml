@@ -21,7 +21,7 @@ jev = ["typesafe-sdk"]
 local = ["torch", "transformers>=4.45", "accelerate", "sentencepiece", "protobuf", "nltk", "lettucedetect", "laya==0.4.4"]
 # The cloud grounding checks (AWS Bedrock, Google Vertex AI Search)
 cloud = ["boto3", "google-auth", "requests"]
-gpu = ["torch", "transformers>=4.45", "accelerate", "sentencepiece", "protobuf", "nltk", "lettucedetect", "laya==0.4.4", "bitsandbytes"]
+gpu = ["torch", "transformers>=4.45", "accelerate", "sentencepiece", "protobuf", "nltk", "lettucedetect", "laya==0.4.4", "bitsandbytes", "peft", "flash-linear-attention"]
 
 [project.scripts]
 hallubench = "hallubench.cli:main"
