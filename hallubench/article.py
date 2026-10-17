@@ -26,6 +26,8 @@ REPORT = ROOT / "results" / "report"
 FAMILY = {
     "jev-choice": "calibrated", "jev-noul": "calibrated", "jev-sentences": "calibrated",
     "laya": "calibrated", "biodecision-v2-4b": "calibrated",
+    "meddecider-4b": "calibrated", "meddecider-9b": "calibrated",
+    "meddecider-27b": "calibrated", "meddecider-31b": "calibrated",
     "judge-logprob-qwen3-235b": "computed", "hhem": "computed", "minicheck-ft5": "computed",
     "minicheck-deberta": "computed", "alignscore-large": "computed", "lettucedetect-large": "computed",
     "bespoke-minicheck-7b": "computed", "granite-guardian-8b": "computed", "lynx-8b": "computed",
@@ -38,6 +40,8 @@ FAMILY = {
 NAME = {
     "jev-choice": "Jev · Choice", "jev-noul": "Jev · Noul", "jev-sentences": "Jev · per sentence",
     "laya": "Laya", "biodecision-v2-4b": "BioDecision v2 4B",
+    "meddecider-4b": "MedDecider 4B", "meddecider-9b": "MedDecider 9B",
+    "meddecider-27b": "MedDecider 27B", "meddecider-31b": "MedDecider 31B",
     "judge-logprob-qwen3-235b": "Qwen3-235B · yes/no probability", "hhem": "HHEM-2.1",
     "minicheck-ft5": "MiniCheck Flan-T5", "minicheck-deberta": "MiniCheck DeBERTa",
     "alignscore-large": "AlignScore-large", "lettucedetect-large": "LettuceDetect",

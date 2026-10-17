@@ -139,6 +139,10 @@ REGISTRY: dict[str, Spec] = {
     "lynx-8b": Spec(_vllm("Lynx"), "gpu", "open-judge", latency="batched"),
     "granite-guardian-8b": Spec(_vllm("GraniteGuardian"), "gpu", "open-judge", latency="batched"),
     "biodecision-v2-4b": Spec(_vllm("BioDecision"), "gpu", "open-system-one"),
+    "meddecider-4b": Spec(_vllm("MedDecider4B"), "gpu", "open-system-one"),
+    "meddecider-9b": Spec(_vllm("MedDecider9B"), "gpu", "open-system-one"),
+    "meddecider-27b": Spec(_vllm("MedDecider27B"), "gpu", "open-system-one"),
+    "meddecider-31b": Spec(_vllm("MedDecider31B"), "gpu", "open-system-one"),
     # prompt-sensitivity ablation: same models, other wordings, core slice only
     "jev-choice-plain": Spec(_jev("JevChoicePlain"), "api", "ablation", core_only=True),
     "jev-noul-flipped": Spec(_jev("JevNoulFlipped"), "api", "ablation", core_only=True),

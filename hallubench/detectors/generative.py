@@ -262,3 +262,123 @@ class BioDecision(Detector):
             latency_ms=latency,
             raw={"choice": choice["choice"], "probabilities": probs, "noul": out["answers"]["hallucinated"]["noul"]},
         )
+
+
+class _MedDecider(Detector):
+    """MedDecider (thelion.ai, CC-BY-NC-4.0): LoRA adapters on Qwen and Gemma
+    bases, trained on 35.8k medical decisions to answer Jev-style questions
+    with a probability per option, read from the option letters' next-token
+    logits and averaged over both option orders. Its `MedDecider` class is
+    loaded from the pinned adapter repo and used as-is, like BioDecision's
+    server, so prompts are rendered exactly the way its authors run it. Plain
+    transformers rather than vLLM, one row at a time.
+
+    It gets `jev-choice`'s question over the same state; each option is the
+    criterion as "label: description", the format its model card uses. Score
+    = 1 - P(faithful), with the choice temperature its config ships. The Noul
+    is not asked: two forward passes per question make it twice the GPU time.
+
+    Precision: bf16 as its authors run it when the GPU holds it; otherwise
+    (27B and 31B on a 40 GB A100) the base is loaded in 8-bit with
+    bitsandbytes and the adapter is applied unmerged on top, the usual QLoRA
+    inference path, instead of merging into quantised weights. Set
+    MEDDECIDER_8BIT=0/1 to force either. Each row records which in `raw`, so
+    the two are never mixed unnoticed.
+
+    Contamination: none of the five datasets is in its training list, which
+    does include NLI and evidence-inference sets (BioNLI, Evidence Inference,
+    VitaminC, MultiNLI), so the task is familiar but the rows are not.
+    """
+
+    workers = 1
+    repo = ""
+    revision = ""
+    bf16_gb = 0.0  # weights alone; activations and the KV of a 9k-token row come on top
+
+    def _eight_bit(self) -> bool:
+        import os
+
+        import torch
+
+        forced = os.environ.get("MEDDECIDER_8BIT")
+        if forced is not None:
+            return forced == "1"
+        return torch.cuda.get_device_properties(0).total_memory < (self.bf16_gb + 12) * 1e9
+
+    def setup(self) -> None:
+        import importlib.util
+        from pathlib import Path
+
+        from huggingface_hub import snapshot_download
+
+        local = snapshot_download(self.repo, revision=self.revision)
+        spec = importlib.util.spec_from_file_location("meddecider_infer", Path(local) / "meddecider_infer.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.precision = "int8" if self._eight_bit() else "bf16"
+        if self.precision == "int8":
+            from peft import PeftModel
+            from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+
+            class Quantised:
+                @staticmethod
+                def from_pretrained(base, **kw):
+                    kw["device_map"] = {"": 0}
+                    return AutoModelForCausalLM.from_pretrained(
+                        base, quantization_config=BitsAndBytesConfig(load_in_8bit=True), **kw)
+
+            class Unmerged:
+                @staticmethod
+                def from_pretrained(model, adapter):
+                    peft = PeftModel.from_pretrained(model, adapter)
+                    peft.merge_and_unload = lambda: peft
+                    return peft
+
+            module.AutoModelForCausalLM, module.PeftModel = Quantised, Unmerged
+        self.decider = module.MedDecider(local)
+
+    def score_one(self, ex: Example) -> Result:
+        from hallubench.detectors.jev import _RESPONSE_CRITERIA, _RESPONSE_INSTRUCTIONS
+
+        labels = list(_RESPONSE_CRITERIA)
+        options = [f"{k}: {v}" for k, v in _RESPONSE_CRITERIA.items()]
+        state = {"question": ex.question, "documents": ex.documents, "response": ex.response}
+        t0 = time.monotonic()
+        out = self.decider.decide(state, _RESPONSE_INSTRUCTIONS, options, qtype="choice")
+        latency = (time.monotonic() - t0) * 1000
+        probs = {k: out[o] for k, o in zip(labels, options)}
+        raw = {"choice": max(probs, key=probs.get), "probabilities": probs, "precision": self.precision}
+        if not all(math.isfinite(p) for p in probs.values()):  # int8 overflow shows up as NaN
+            return Result(id=ex.id, score=None, latency_ms=latency, error="non-finite probabilities", raw=raw)
+        return Result(id=ex.id, score=1.0 - probs["faithful"], latency_ms=latency, raw=raw)
+
+
+class MedDecider4B(_MedDecider):
+    name = "meddecider-4b"
+    repo = "lion-ai/MedDecider-4B"
+    revision = "570b37090c379ad722186a79a3432a31be463fc9"
+    bf16_gb = 9
+
+
+class MedDecider9B(_MedDecider):
+    name = "meddecider-9b"
+    repo = "lion-ai/MedDecider-9B"
+    revision = "ec8a69da2cd96b2ddd2ff4e314ba9a40b71936c3"
+    bf16_gb = 19
+
+
+class MedDecider27B(_MedDecider):
+    name = "meddecider-27b"
+    repo = "lion-ai/MedDecider-27B"
+    revision = "c30e188118471138300c79f2f963cbdac530e658"
+    bf16_gb = 56
+
+
+class MedDecider31B(_MedDecider):
+    """On google/gemma-4-31b-it, which is gated: accept its licence on the
+    Hub and give Colab an HF_TOKEN secret."""
+
+    name = "meddecider-31b"
+    repo = "lion-ai/MedDecider-31B"
+    revision = "035f4543edf46202347515cda8201f1457b1d5fb"
+    bf16_gb = 62
