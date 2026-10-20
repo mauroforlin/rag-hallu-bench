@@ -4,6 +4,21 @@ A comparison of hallucination checkers on medical RAG answers. Each checker read
 
 I started it while adding claim verification to [ebm-lens](https://github.com/mauroforlin/ebm-lens), which now uses Jev, but nothing here imports from that project. The write-up is at https://mauroforlin.github.io/rag-hallu-bench/.
 
+## This branch: MedDecider
+
+This branch adds [MedDecider](https://huggingface.co/collections/lion-ai/meddecider-6acd32515928b98a6671de7b) (thelion.ai) 4B, 9B and 27B to the benchmark. It is not part of the published article. Each model is loaded with its authors' `meddecider_infer.py` from a pinned revision and gets the same question as `jev-choice`; the score is 1 − P(faithful), averaged over both option orders (`hallubench/detectors/generative.py`). The 4B and 9B ran in bf16, the 27B quantized to int8 (bitsandbytes) to fit on a 40 GB A100. All three scored every row.
+
+| Checker | Macro AUROC | RAGBench PubMedQA |
+|---|---|---|
+| Qwen3-235B, yes/no probability | 0.925 | 0.781 |
+| MedDecider 27B (int8) | 0.920 | 0.802 |
+| Jev Choice | 0.917 | 0.815 |
+| MedDecider 9B | 0.903 | 0.771 |
+| MedDecider 4B | 0.900 | 0.790 |
+| BioDecision v2 4B | 0.881 | 0.703 |
+
+To rerun, open `notebooks/colab_gpu.ipynb` on an A100 with `ONLY_MEDDECIDER = True`. The MedDecider adapters are CC-BY-NC-4.0. The registry also lists `meddecider-31b`, which has no results here.
+
 ## What counts as a hallucination
 
 An answer is counted as hallucinated when it states something the retrieved documents don't, even if it is medically correct. The test is about faithfulness to the documents and says nothing about whether the documents are right. MedHallu partly mixes in correctness, as noted below.
